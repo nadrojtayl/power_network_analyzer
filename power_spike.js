@@ -1,5 +1,60 @@
 
 "use strict";
+var fs = require("fs");
+
+
+// takes string left,bottom,right,top defining bounding box
+function check_serialized_data(left_bottom_right_top){
+    var register = JSON.parse(
+        fs.readFileSync(__dirname + "/serialized_osm_data/register.json")
+        )
+    return register[left_bottom_right_top];
+}
+var power_data;
+
+// takes string left,bottom,right,top defining bounding box
+function load_serialized_data_if_its_there(left_bottom_right_top){
+    console.log("Checking if data is already present and serialized for this bounding box...")
+    if(check_serialized_data(left_bottom_right_top)){
+        console.log("It is...loading data")
+        var data_string = fs.readFileSync(__dirname + "/serialized_osm_data/" + left_bottom_right_top + ".json","utf8");
+        power_data = JSON.parse(data_string)
+
+        return true;
+    }
+    console.log("It is not...pulling data from OSM...")
+    return false;
+}
+
+// console.log(load_serialized_data_if_its_there("10,15,20,25"));
+// console.log("DATA" + power_data)
+// takes string left,bottom,right,top defining bounding box
+function add_to_register(left_bottom_right_top){
+        var register = JSON.parse(
+            fs.readFileSync(__dirname + "/serialized_osm_data/register.json")
+        )
+        register[left_bottom_right_top] = true;
+        fs.writeFileSync(__dirname + "/serialized_osm_data/register.json", JSON.stringify(register));
+        console.log("Serializing data...wrote to register");
+}
+
+
+
+// add_to_register("5,10,15,20");
+
+//takes [left,bottom,right,top],power_data
+function serialize_data_as_json_file_in_serialized_directory(left_bottom_right_top,power_data){
+    console.log("Serializing data...")
+    var left = left_bottom_right_top[0], bottom = left_bottom_right_top[1],
+    right = left_bottom_right_top[2], top = left_bottom_right_top[3];
+
+    var file_name = left + "," + bottom + "," + right + "," + top;
+    add_to_register(file_name)
+    fs.writeFileSync(__dirname + "/serialized_osm_data/" + file_name + ".json",JSON.stringify(power_data));
+}
+
+
+
 
 class Node {
     constructor(metadata, tags) {
@@ -167,11 +222,21 @@ var turn_array_of_tuples_to_map = function(tuple_array) {
 
 
 var read_node = function(node_txt) {
+    // if(scanning_unfound){
+    //     console.log("TEXT"+ node_txt);
+    // }
+   
     // console.log("TEXT" + node_txt);
-    if (split_at_first_char(node_txt, ">")[1].length > 3) {
+    if ((split_at_first_char(node_txt, ">")[1].length > 20) && !scanning_unfound) {
         node_txt = split_at_first_char(node_txt, ">")[1];
     }
+
+    // if(scanning_unfound){
+    //     console.log("TEXT3"+ node_txt);
+    // }
+
     var split_string = split_at_first_char(node_txt, ">");
+    // console.log("SPLIT" + split_string);
 
     var meta_data_part = split_string[0];
     var tags_part = split_string[1];
@@ -184,6 +249,9 @@ var read_node = function(node_txt) {
     var node = new Node(meta_data, tags)
 
     // log = true;
+    if(scanning_unfound){
+        console.log("node" + JSON.stringify(node));
+    }
     return node;
 }
 
@@ -405,7 +473,7 @@ var request = require('request');
 //use http://boundingbox.klokantech.com/
 //121.5819118772,25.278222671,121.593536571,25.2934918638
 //MUNICH : 11.5607681668,48.1299258459,11.5901068768,48.1437874657
-var coords = [121.504228,25.039584,121.592678,25.083435]
+var coords = [-0.251945,51.466459,-0.042861,51.594607]
 //
 
 
@@ -440,14 +508,20 @@ var add_nodes_or_ways_to_map = function(map, array) {
     })
 }
 
-var number_unfound = []
+var unfound = []
 
 var change_node_or_way_references_to_objects = function(obj) {
     obj["Nodes"] = obj["Nodes"];
+
+    var notdefined;
+
     obj["Ways"].forEach(function(way) {
         way["node_references"] = way["node_references"].map(function(ref) {
-
-            return nodes_map[ref] === undefined ? ref : nodes_map[ref]
+            notdefined = nodes_map[ref] === undefined;
+            if(notdefined){
+                unfound.push(ref);
+            }
+            return notdefined ? ref : nodes_map[ref]
         });
     })
 
@@ -456,7 +530,11 @@ var change_node_or_way_references_to_objects = function(obj) {
             if (member["type"] === "way") {
                 return ways_map[member["ref"]] === undefined ? member : ways_map[member["ref"]];
             } else {
-                return nodes_map[member["ref"]] === undefined ? member : nodes_map[member["ref"]];
+                notdefined = nodes_map[member["ref"]] === undefined;
+                if(notdefined){
+                    unfound.push(member["ref"]);
+                }
+                return notdefined ? member : nodes_map[member["ref"]];
             }
         })
     })
@@ -465,19 +543,49 @@ var change_node_or_way_references_to_objects = function(obj) {
 }
 
 
+var array_to_comma_separated_list = function(arr){
+    var list = arr[0].toString();
+    var elem;
 
-// var get_all_unfound_nodes = function(ways,relations){
-//     var unfound_refs = [];
-//     var refs;
-//     ways.forEach(function(way){
-//         refs = way["node_references"]
-//     })
-// }
+    for (var i =1;i<arr.length;i++){
+        elem = arr[i];
+        list = list + "," + elem
+    }
+
+    return list;
+}
+
+var scanning_unfound = false;
+
+var get_unfound = function(){
+    var url = 'https://api.openstreetmap.org/api/0.6/nodes?nodes=' + array_to_comma_separated_list(unfound)
+
+    request(url, function(error, response, body) {
+        scanning_unfound = true;
+        console.log("Got unfound nodes from OSM via API request")
+        // console.log("UNFOUND RES" + body);
+        var unfound_data = read_xml(body);
+        // console.log("UNFOUND DATA" + JSON.stringify(unfound_data));
+        add_nodes_or_ways_to_map(nodes_map, unfound_data["Nodes"]);
+
+        change_node_or_way_references_to_objects(power_data);
+        console.log("Server ready to send power data");
+        JSON.stringify(power_data);
+        serialize_data_as_json_file_in_serialized_directory([left,bottom,right,top],power_data);
+    });
+
+
+
+}
+
+
+
 
 var boxes_expected;
 var boxes_loaded = 0;
 
 var get_objects_for_box = function(left, bottom, right, top) {
+    console.log("Making request");
     // console.log("BOX2"+ bottom);
     // left = 11.5636649525,bottom = 48.1742469614, right = 11.5956797993,top = 48.1883827229
     var url = 'https://api.openstreetmap.org/api/0.6/map?bbox=' + left + "," + bottom + "," + right + "," + top;
@@ -487,6 +595,7 @@ var get_objects_for_box = function(left, bottom, right, top) {
         // console.log("DATA" + power_data["Nodes"]);
         var data = read_xml(body);
         // console.log(body);
+        // console.log(body);
         if(body.length<5000){
             console.log(body);
         }
@@ -495,9 +604,11 @@ var get_objects_for_box = function(left, bottom, right, top) {
 
         add_nodes_or_ways_to_map(ways_map, data["Ways"]);
 
-        data = change_node_or_way_references_to_objects(data);
+        // data = change_node_or_way_references_to_objects(data);
 
         var box_data = tag_filter(data, "power");
+
+        box_data = change_node_or_way_references_to_objects(box_data);
 
         var nodes_count = box_data["Nodes"].length;
         var ways_count = box_data["Ways"].length;
@@ -512,11 +623,21 @@ var get_objects_for_box = function(left, bottom, right, top) {
         boxes_loaded = boxes_loaded + 1;
         console.log("Loaded " + boxes_loaded + " of " + boxes_expected + "boxes");
         if(boxes_loaded === boxes_expected){
-             console.log("Server ready to send power data");
+            console.log("Didn't find these nodes " + unfound);
+             console.log("Fetching those nodes");
+            if(unfound.length > 0){
+                console.log("UNFOUND" + JSON.stringify(unfound));
+                get_unfound();
+            } else {
+                power_data = JSON.stringify(power_data)
+            }
+             // console.log("Server ready to send power data");
              console.log("Found " + power_data["Nodes"].length + " nodes");
              console.log("Found " + power_data["Ways"].length + " ways");
              console.log("Found " + power_data["Relations"].length + " relations");
-             power_data = JSON.stringify(power_data);
+             
+             // power_data = JSON.stringify(power_data);
+             
         }
         // power_data = JSON.stringify(power_data);
         
@@ -572,12 +693,19 @@ var turn_coords_into_grid = function(coords) {
 
 
 var get_power_objects_by_coordinates = function(left, botton, right, top) {
-    var boxes = turn_coords_into_grid([left, bottom, right, top])
-    boxes_expected = boxes.length;
-    console.log("Found " + boxes_expected + " boxes in the area you're pulling data for");
-    boxes.forEach(function(box, ind) {
-        get_objects_for_box(box[0], box[1], box[2], box[3]);
-    });
+    var file_name_if_serialized_already = left + "," + bottom + "," + right + "," + top;
+    if(load_serialized_data_if_its_there(file_name_if_serialized_already)){
+        console.log("Loaded data from file")
+    } else {
+        var boxes = turn_coords_into_grid([left, bottom, right, top])
+        boxes_expected = boxes.length;
+        console.log("Found " + boxes_expected + " boxes in the area you're pulling data for");
+        boxes.forEach(function(box, ind) {
+            get_objects_for_box(box[0], box[1], box[2], box[3]);
+        });
+
+    }
+
 
     // power_data = JSON.stringify(power_data);
 
@@ -614,6 +742,9 @@ app.get("/boxes", function(req, res) {
 })
 
 
+ var node_txt = '<node id="5170844277" visible="true" version="1" changeset="52975572" timestamp="2017-10-16T08:50:41Z" user="Miller Liu" uid="5443326" lat="25.0907868" lon="121.5290472"><tag k="power" v="tower"/></node>'
+// console.log(read_node(node_txt));
 
 
 get_power_objects_by_coordinates(left, bottom, right, top);
+console.log(check_serialized_data("example2"))

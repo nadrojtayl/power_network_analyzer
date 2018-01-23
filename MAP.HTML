@@ -55,7 +55,7 @@
 		[51.509, -0.08],
 		[51.503, -0.06],
 		[51.51, -0.047]
-	]).addTo(mymap)
+	],{color: 'red'}).addTo(mymap)	
 
 	// var popup = L.popup();
 
@@ -69,11 +69,12 @@
 
 	var buildings = [];
 	var polygons = [];
+	var polylines = [];
 	var power_data;
 	var polygon;
 	var building;
 
-	var draw_building = function(way_object){
+	var draw_way = function(way_object){
 		var nodes = [];
 		var latlongs = way_object["node_references"].forEach(function(ref){
 			if(ref["metadata"] !== undefined){
@@ -84,19 +85,27 @@
 			}
 		})
 		var tags_string = JSON.stringify(way_object["tags"]);
-		polygon = L.polygon(nodes).addTo(mymap)
-		polygons.push(polygon)
-		polygon.bindPopup(tags_string);
-		building = new Building(way_object["metadata"],nodes,way_object["tags"])
-		buildings.push(building);
+		if(way_object["tags"]["power"] === "line"||way_object["tags"]["power"] === "cable"){
+			polyline = L.polyline(nodes).addTo(mymap);
+			polylines.push(polyline)
+			polyline.bindPopup(tags_string);
+		} else {
+			polygon = L.polygon(nodes,{color: 'red'}).addTo(mymap)
+			polygons.push(polygon)
+			polygon.bindPopup(tags_string);
+			building = new Building(way_object["metadata"],nodes,way_object["tags"])
+			buildings.push(building);
+		}
+
 
 	}
 
 	
 
 	$.get("http://localhost:3000/latlong",function(data){
+		// console.log("HERE")
 		var bounds = JSON.parse(data);
-		console.log(data);
+		// console.log(data);
 		mymap.fitBounds(bounds);
 
 	})
@@ -104,7 +113,7 @@
 	var grid_boxes;
 
 	var draw_grid = function(boxes_array){
-		console.log("ARR" + boxes_array);
+		// console.log("ARR" + boxes_array);
 		var left;
 		var bottom;
 		var right;
@@ -123,7 +132,7 @@
 			[top,left]
 
 		]
-		 console.log("BOX AFTER" + bound_box);
+		 // console.log("BOX AFTER" + bound_box);
 
 		L.polygon(bound_box).addTo(mymap)
 
@@ -131,11 +140,12 @@
 	}
 
 	$.get("http://localhost:3000/boxes",function(data){
+		// console.log("HERE1")
 		boxes = JSON.parse(data);
-		console.log("boxes" + boxes);
+		// console.log("boxes" + boxes);
 		grid_boxes = boxes;
 		boxes.forEach(function(box){
-			console.log('BOX' + typeof box);
+			// console.log('BOX' + typeof box);
 			draw_grid(box);
 		})
 		// console.log(data);
@@ -144,12 +154,160 @@
 	})
 
 	$.get("http://localhost:3000/data",function(data){
-		power_data = JSON.parse(data);
+
+		power_data = data;
+		
 		// console.log(data);
 		
 
 	})
 
+</script>
+<script>
+//clustering algorithm for building perims
+	var add_perimeters_to_buildings = function(){
+		buildings.forEach(function(building){
+			building["perimeter"] = get_perimeter(building["nodes"]);
+		})
+	}
+
+
+ 	// console.log(segment_length([1,2],[2,3]));
+
+ 	var get_percentage_of_differences = function(arr){
+ 		var percentages = [];
+ 		var sum = 0;
+ 		var pct;
+
+ 		arr.forEach(function(diff,ind){
+ 			sum = sum + diff;
+ 			avg = sum/(ind + 1);
+ 			pct = diff/avg;
+ 			percentages.push(pct);
+
+ 		})
+ 		return percentages;
+
+ 	}
+
+ 	var cluster_buildings = function(numbers){
+ 		//find a better, machine learning k means clustering way to do this later
+
+ 		var sorted = numbers.sort(function(a,b){
+ 			if(a>b){return 1} return -1;
+ 		});
+ 		// console.log("SORTED " + sorted)
+ 		
+ 		var differences = [];
+ 		for(var i =1; i < sorted.length; i++){
+ 			differences.push(sorted[i] - sorted[i-1]);
+ 		}
+ 		// console.log("SORTEDX " + sorted);
+ 		
+
+ 		// var sum_of_differences = differences.reduce(function(a,b){return a+b;})
+
+ 		// var percentage_of_differences = differences.map(function(num){return num/sum_of_differences})
+// 
+ 		 var percentage_of_differences = get_percentage_of_differences(differences);
+ 		
+ 		 // console.log("END_RESULT" + percentage_of_differences)
+ 		
+
+ 		var sorted_percentage_of_differences = copy_then_sort_array_max_to_lowest(percentage_of_differences);
+
+ 		// console.log("SORTED DIFFS " + sorted_percentage_of_differences);
+
+ 		var n = sorted.length/2;
+
+ 	//	var curr_amount_difference_between_clusters = 0;
+ 		var curr_max_goodness;
+ 		var num_break_points;
+ 		var goodness;
+
+ 		var differences = {};
+
+ 		var indexes_to_split_clusters_at = {};
+ 		// console.log()
+ 		for(var j=1;j<n;j++){
+ 		//	curr_amount_difference_between_clusters = curr_amount_difference_between_clusters + sorted_percentage_of_differences[i];
+ 			goodness = sorted_percentage_of_differences[j] - sorted_percentage_of_differences[j-1]
+ 			// console.log("index " + j)
+ 			if(curr_max_goodness<Math.abs(goodness) || curr_max_goodness === undefined){
+ 				curr_max_goodness = Math.abs(goodness);
+ 				// console.log("GOODNESS " + goodness)
+ 				num_break_points = j;
+ 			}
+ 		}
+ 		// console.log("MAX GOOD" + curr_max_goodness)
+ 		// console.log("Clusters " + num_clusters)
+
+ 		for(var k = 0;k<num_break_points;k++){
+ 			differences[sorted_percentage_of_differences[k]] = true;
+ 		}
+ 		 
+ 		// console.log("DIFFS " + JSON.stringify(differences));
+
+ 		for(var l = 0;l<percentage_of_differences.length;l++){
+ 			if(differences[percentage_of_differences[l]]){
+ 				indexes_to_split_clusters_at[l] = true;
+ 			}
+ 		}
+
+ 		var clusters = [];
+ 		var curr_cluster = []
+ 		for(var m = 0; m<sorted.length;m++){
+ 			curr_cluster.push(sorted[m]);
+ 			if(indexes_to_split_clusters_at[m]){
+ 				clusters.push(curr_cluster);
+ 				curr_cluster = [];
+ 			}
+ 		}
+
+ 		clusters.push(curr_cluster);
+
+ 		return clusters
+ 		
+
+ 	}
+
+ 	function copy_then_sort_array_max_to_lowest(arr){
+ 		var new_arr = [];
+ 		arr.forEach(function(num){
+ 			new_arr.push(num);
+ 		})
+
+ 		new_arr.sort(function(a,b){
+ 			if(a<b){return 1} return -1;
+ 		});
+ 		// console.log("ARR " + new_arr)
+
+ 		return new_arr;
+ 	}
+
+</script>
+<script>
+	 var segment_length = function(node1,node2){
+ 		var lat_diff = Math.abs(node1[0] - node2[0]);
+
+ 		var long_diff = Math.abs(node1[1] - node2[1]);
+
+ 		var seg_length = Math.sqrt(lat_diff*lat_diff + long_diff*long_diff)
+ 		// console.log(lat_diff*lat_diff)
+ 		return seg_length
+ 	}
+
+ 	 var get_perimeter = function(nodes){
+ 	 	var perimeter = 0
+ 	 	var seg_length;
+ 	 	for(var i = 1;i<nodes.length;i++){
+ 	 		seg_length = segment_length(nodes[i-1],nodes[i]);
+ 	 		perimeter = perimeter + seg_length;
+ 	 	}
+ 	 	return perimeter;
+ 	}
+
+ 	
 </script>
 
 
