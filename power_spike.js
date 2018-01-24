@@ -473,7 +473,14 @@ var request = require('request');
 //use http://boundingbox.klokantech.com/
 //121.5819118772,25.278222671,121.593536571,25.2934918638
 //MUNICH : 11.5607681668,48.1299258459,11.5901068768,48.1437874657
-var coords = [-0.251945,51.466459,-0.042861,51.594607]
+
+//little london: -0.1468,51.492,-0.0295,51.5457
+//taipei 1: 121.424793,25.004275,121.595082,25.100381
+//taipei 2 (more complete pull): 121.378102,25.019675,121.503071,25.10007
+//taipei urban area (missing cables)?: 121.41724,24.989961,121.606068,25.111884
+//taipei western less urban area: 121.31596,24.975646,121.504788,25.097583
+//taipei southern less urban area: 121.43269,24.910896,121.621517,25.032897
+var coords = [121.43269,24.910896,121.621517,25.032897]
 //
 
 
@@ -557,25 +564,63 @@ var array_to_comma_separated_list = function(arr){
 
 var scanning_unfound = false;
 
+function uniq(a) {
+    var seen = {};
+    return a.filter(function(item) {
+        return seen.hasOwnProperty(item) ? false : (seen[item] = true);
+    });
+}
+
+var num_unfound_bunches;
+var unfound_bunches_loaded = 0;
+
 var get_unfound = function(){
-    var url = 'https://api.openstreetmap.org/api/0.6/nodes?nodes=' + array_to_comma_separated_list(unfound)
+    var uniq_unfound = uniq(unfound);
+
+    var amt_in_current_bunch = 0;
+    var current_bunch = [];
+    var unfound_bunches = [];
+
+    for(var i = 0; i< uniq_unfound.length; i++){
+        amt_in_current_bunch++;
+        if(amt_in_current_bunch === 600 || i === uniq_unfound.length -1){
+            unfound_bunches.push(current_bunch);
+            current_bunch = [];
+        }
+        current_bunch.push(uniq_unfound[i]);
+    }
+
+    num_unfound_bunches = unfound_bunches.length;
+
+    for(var j = 0;j<num_unfound_bunches;j++){
+        make_unfound_request(unfound_bunches[j]);
+    }
+    console.log("Found " + num_unfound_bunches + "bunches of ~600 unfound nodes each")
+
+}
+
+var make_unfound_request = function(arr_of_unfound_nodes){
+    var url = 'https://api.openstreetmap.org/api/0.6/nodes?nodes=' + array_to_comma_separated_list(arr_of_unfound_nodes)
 
     request(url, function(error, response, body) {
+        console.log("REPLY FOR UNFOUND bunch #" + (unfound_bunches_loaded + 1));
+        console.log(body);
         scanning_unfound = true;
         console.log("Got unfound nodes from OSM via API request")
         // console.log("UNFOUND RES" + body);
         var unfound_data = read_xml(body);
         // console.log("UNFOUND DATA" + JSON.stringify(unfound_data));
         add_nodes_or_ways_to_map(nodes_map, unfound_data["Nodes"]);
+        unfound_bunches_loaded++;
 
-        change_node_or_way_references_to_objects(power_data);
-        console.log("Server ready to send power data");
-        JSON.stringify(power_data);
-        serialize_data_as_json_file_in_serialized_directory([left,bottom,right,top],power_data);
+        if(unfound_bunches_loaded === num_unfound_bunches){
+            change_node_or_way_references_to_objects(power_data);
+            console.log("Server ready to send power data");
+            power_data["Nodes"] = [];
+            serialize_data_as_json_file_in_serialized_directory([left,bottom,right,top],power_data);
+            JSON.stringify(power_data);
+        }
     });
-
-
-
 }
 
 
@@ -598,6 +643,9 @@ var get_objects_for_box = function(left, bottom, right, top) {
         // console.log(body);
         if(body.length<5000){
             console.log(body);
+            console.log("Shut out of OSM for too many requests...serializing the data we did manage to grab")
+            serialize_data_as_json_file_in_serialized_directory([left,bottom,right,top],power_data);
+            power_data = JSON.stringify(power_data)
         }
         add_nodes_or_ways_to_map(nodes_map, data["Nodes"]);
 
@@ -629,12 +677,15 @@ var get_objects_for_box = function(left, bottom, right, top) {
                 console.log("UNFOUND" + JSON.stringify(unfound));
                 get_unfound();
             } else {
+               console.log("Found " + power_data["Nodes"].length + " nodes");
+                console.log("Found " + power_data["Ways"].length + " ways");
+                console.log("Found " + power_data["Relations"].length + " relations");
+                power_data["Nodes"] = [];
+                serialize_data_as_json_file_in_serialized_directory([left,bottom,right,top],power_data);
                 power_data = JSON.stringify(power_data)
             }
              // console.log("Server ready to send power data");
-             console.log("Found " + power_data["Nodes"].length + " nodes");
-             console.log("Found " + power_data["Ways"].length + " ways");
-             console.log("Found " + power_data["Relations"].length + " relations");
+
              
              // power_data = JSON.stringify(power_data);
              
@@ -692,7 +743,7 @@ var turn_coords_into_grid = function(coords) {
 
 
 
-var get_power_objects_by_coordinates = function(left, botton, right, top) {
+var get_power_objects_by_coordinates = function(left, bottom, right, top) {
     var file_name_if_serialized_already = left + "," + bottom + "," + right + "," + top;
     if(load_serialized_data_if_its_there(file_name_if_serialized_already)){
         console.log("Loaded data from file")

@@ -85,7 +85,8 @@
 			}
 		})
 		var tags_string = JSON.stringify(way_object["tags"]);
-		if(way_object["tags"]["power"] === "line"||way_object["tags"]["power"] === "cable"){
+		if(way_object["tags"]["power"] !== "substation"){
+			console.log("Adding polyline " + JSON.stringify(nodes))
 			polyline = L.polyline(nodes).addTo(mymap);
 			polylines.push(polyline)
 			polyline.bindPopup(tags_string);
@@ -103,8 +104,9 @@
 	
 
 	$.get("http://localhost:3000/latlong",function(data){
-		// console.log("HERE")
+		 
 		var bounds = JSON.parse(data);
+		console.log(bounds[0]);
 		// console.log(data);
 		mymap.fitBounds(bounds);
 
