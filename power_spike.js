@@ -471,16 +471,20 @@ var request = require('request');
 
 
 //use http://boundingbox.klokantech.com/
-//121.5819118772,25.278222671,121.593536571,25.2934918638
-//MUNICH : 11.5607681668,48.1299258459,11.5901068768,48.1437874657
 
-//little london: -0.1468,51.492,-0.0295,51.5457
-//taipei 1: 121.424793,25.004275,121.595082,25.100381
-//taipei 2 (more complete pull): 121.378102,25.019675,121.503071,25.10007
-//taipei urban area (missing cables)?: 121.41724,24.989961,121.606068,25.111884
-//taipei western less urban area: 121.31596,24.975646,121.504788,25.097583
-//taipei southern less urban area: 121.43269,24.910896,121.621517,25.032897
-var coords = [121.43269,24.910896,121.621517,25.032897]
+
+
+//taipei big pull including urban hub, lots of western less urban area: 121.405567,24.998051,121.622547,25.116236
+    //building pull for above 121.405567,24.998051,121.622547,25.116237
+//taipei southern less urban area: 121.41312,24.914632,121.620487,25.032897
+    //building pull for above 121.41312,24.914632,121.620487,25.032898
+//taipei eastern less urban area: 121.55045,24.973156,121.757817,25.091364
+    // building pull for above 121.55045,24.973156,121.757817,25.091366
+//taipei northern urban area: 121.446079,25.067732,121.653446,25.185849
+    //building pull for above 121.446079,25.067732,121.653446,25.185850
+//taipei big slice western area: 121.303257,24.996184,121.510624,25.114371
+     //building pull for above: 121.303257,24.996184,121.510624,25.114372
+var coords = [121.55045,24.973156,121.757817,25.091366]
 //
 
 
@@ -654,7 +658,7 @@ var get_objects_for_box = function(left, bottom, right, top) {
 
         // data = change_node_or_way_references_to_objects(data);
 
-        var box_data = tag_filter(data, "power");
+        var box_data = tag_filter(data, "building");
 
         box_data = change_node_or_way_references_to_objects(box_data);
 
@@ -746,6 +750,8 @@ var turn_coords_into_grid = function(coords) {
 var get_power_objects_by_coordinates = function(left, bottom, right, top) {
     var file_name_if_serialized_already = left + "," + bottom + "," + right + "," + top;
     if(load_serialized_data_if_its_there(file_name_if_serialized_already)){
+        ///load grid so it can be seen on map
+        turn_coords_into_grid([left, bottom, right, top]);
         console.log("Loaded data from file")
     } else {
         var boxes = turn_coords_into_grid([left, bottom, right, top])
@@ -795,7 +801,7 @@ app.get("/boxes", function(req, res) {
 
  var node_txt = '<node id="5170844277" visible="true" version="1" changeset="52975572" timestamp="2017-10-16T08:50:41Z" user="Miller Liu" uid="5443326" lat="25.0907868" lon="121.5290472"><tag k="power" v="tower"/></node>'
 // console.log(read_node(node_txt));
-
+exports = {"read_xml":read_xml};
 
 get_power_objects_by_coordinates(left, bottom, right, top);
 console.log(check_serialized_data("example2"))

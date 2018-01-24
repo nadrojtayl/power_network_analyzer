@@ -68,6 +68,7 @@
 	}
 
 	var buildings = [];
+	var substations = [];
 	var polygons = [];
 	var polylines = [];
 	var power_data;
@@ -85,13 +86,21 @@
 			}
 		})
 		var tags_string = JSON.stringify(way_object["tags"]);
-		if(way_object["tags"]["power"] !== "substation"){
-			console.log("Adding polyline " + JSON.stringify(nodes))
-			polyline = L.polyline(nodes).addTo(mymap);
-			polylines.push(polyline)
-			polyline.bindPopup(tags_string);
+		if(way_object["tags"]["power"] !== undefined){
+			if(way_object["tags"]["power"] !== "substation"){
+				console.log("Adding polyline " + JSON.stringify(nodes))
+				polyline = L.polyline(nodes).addTo(mymap);
+				polylines.push(polyline)
+				polyline.bindPopup(tags_string);
+			} else {
+				polygon = L.polygon(nodes,{color: 'red'}).addTo(mymap)
+				polygons.push(polygon)
+				polygon.bindPopup(tags_string);
+				building = new Building(way_object["metadata"],nodes,way_object["tags"])
+				substations.push(building);
+			}
 		} else {
-			polygon = L.polygon(nodes,{color: 'red'}).addTo(mymap)
+			polygon = L.polygon(nodes,{color: 'green'}).addTo(mymap)
 			polygons.push(polygon)
 			polygon.bindPopup(tags_string);
 			building = new Building(way_object["metadata"],nodes,way_object["tags"])

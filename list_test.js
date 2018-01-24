@@ -20,7 +20,7 @@
  	 	return perimeter;
  	}
 
- 	
+
 
 
 
@@ -161,4 +161,4 @@
 		 console.log(cluster_nodes([1,2,3,300,500]))
 		
 		
- 	
+ 	console.log("TYPE" + typeof 1)
