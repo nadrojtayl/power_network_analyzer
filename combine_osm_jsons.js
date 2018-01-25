@@ -97,26 +97,31 @@ function assign_outer_ring_for_graphing_purposes(substation){
 
 	buildings_served.forEach(function(building){
 		center = building["center_lat_long"], latitude = center[0], longitude = center[1];
-		if(point_farthest_north === undefined || latitude > point_farthest_north[0]){
+		// console.log("Lat " + latitude);
+		// console.log("Northmost " + point_farthest_north[0])
+		if(point_farthest_north === undefined || latitude > point_farthest_north["center_lat_long"][0]){
 			point_farthest_north = building;
+			// console.log(point_farthest_north)
 		}
-		if(point_farthest_south === undefined || latitude < point_farthest_south[0]){
-			point_farthest_south = building;
+		if(point_farthest_south === undefined || latitude < point_farthest_south["center_lat_long"][0]){
+		 	point_farthest_south = building;
 		}
-		if(point_farthest_east === undefined || longitude > point_farthest_east[1]){
+		if(point_farthest_east === undefined || longitude > point_farthest_east["center_lat_long"][1]){
 			point_farthest_east = building;
 		}
-		if(point_farthest_west === undefined || longitude < point_farthest_west[1]){
+		if(point_farthest_west === undefined || longitude < point_farthest_west["center_lat_long"][1]){
 			point_farthest_west = building;
 		}
 	})
 
-	substation["outer-ring"] = [point_farthest_north,point_farthest_south,point_farthest_east,point_farthest_west];
+	substation["outer-ring"] = [point_farthest_north,point_farthest_east,point_farthest_south,point_farthest_west];
 
 }
 
-function map_outer_ring(){
-	
+function map_outer_ring(substation){
+	var nodes_in_ring = substation["outer-ring"].map(function(building){return building["center_lat_long"]});
+	console.log(nodes_in_ring)
+	polygon = L.polygon(nodes_in_ring,{color: 'yellow'}).addTo(mymap);
 }
 
 // function find_closest_buildings_to_each_substation =

@@ -28,6 +28,179 @@
 
 
 <div id="mapid" style="width: 1800px; height: 1200px;"></div>
+
+<script>
+
+/**
+ * Graham's Scan Convex Hull Algorithm
+ * @desc An implementation of the Graham's Scan Convex Hull algorithm in JavaScript.
+ * @author Brian Barnett, brian@3kb.co.uk, http://brianbar.net/ || http://3kb.co.uk/
+ * @version 1.0.5
+ */
+function ConvexHullGrahamScan() {
+    this.anchorPoint = undefined;
+    this.reverse = false;
+    this.points = [];
+}
+
+ConvexHullGrahamScan.prototype = {
+
+    constructor: ConvexHullGrahamScan,
+
+    Point: function (x, y) {
+        this.x = x;
+        this.y = y;
+    },
+
+    _findPolarAngle: function (a, b) {
+        var ONE_RADIAN = 57.295779513082;
+        var deltaX, deltaY;
+
+        //if the points are undefined, return a zero difference angle.
+        if (!a || !b) return 0;
+
+        deltaX = (b.x - a.x);
+        deltaY = (b.y - a.y);
+
+        if (deltaX == 0 && deltaY == 0) {
+            return 0;
+        }
+
+        var angle = Math.atan2(deltaY, deltaX) * ONE_RADIAN;
+
+        if (this.reverse){
+            if (angle <= 0) {
+                angle += 360;
+            }
+        }else{
+            if (angle >= 0) {
+                angle += 360;
+            }
+        }
+
+        return angle;
+    },
+
+    addPoint: function (x, y) {
+        //Check for a new anchor
+        var newAnchor =
+            (this.anchorPoint === undefined) ||
+            ( this.anchorPoint.y > y ) ||
+            ( this.anchorPoint.y === y && this.anchorPoint.x > x );
+
+        if ( newAnchor ) {
+            if ( this.anchorPoint !== undefined ) {
+                this.points.push(new this.Point(this.anchorPoint.x, this.anchorPoint.y));
+            }
+            this.anchorPoint = new this.Point(x, y);
+        } else {
+            this.points.push(new this.Point(x, y));
+        }
+    },
+
+    _sortPoints: function () {
+        var self = this;
+
+        return this.points.sort(function (a, b) {
+            var polarA = self._findPolarAngle(self.anchorPoint, a);
+            var polarB = self._findPolarAngle(self.anchorPoint, b);
+
+            if (polarA < polarB) {
+                return -1;
+            }
+            if (polarA > polarB) {
+                return 1;
+            }
+
+            return 0;
+        });
+    },
+
+    _checkPoints: function (p0, p1, p2) {
+        var difAngle;
+        var cwAngle = this._findPolarAngle(p0, p1);
+        var ccwAngle = this._findPolarAngle(p0, p2);
+
+        if (cwAngle > ccwAngle) {
+
+            difAngle = cwAngle - ccwAngle;
+
+            return !(difAngle > 180);
+
+        } else if (cwAngle < ccwAngle) {
+
+            difAngle = ccwAngle - cwAngle;
+
+            return (difAngle > 180);
+
+        }
+
+        return true;
+    },
+
+    getHull: function () {
+        var hullPoints = [],
+            points,
+            pointsLength;
+
+        this.reverse = this.points.every(function(point){
+            return (point.x < 0 && point.y < 0);
+        });
+
+        points = this._sortPoints();
+        pointsLength = points.length;
+
+        //If there are less than 3 points, joining these points creates a correct hull.
+        if (pointsLength < 3) {
+            points.unshift(this.anchorPoint);
+            return points;
+        }
+
+        //move first two points to output array
+        hullPoints.push(points.shift(), points.shift());
+
+        //scan is repeated until no concave points are present.
+        while (true) {
+            var p0,
+                p1,
+                p2;
+
+            hullPoints.push(points.shift());
+
+            p0 = hullPoints[hullPoints.length - 3];
+            p1 = hullPoints[hullPoints.length - 2];
+            p2 = hullPoints[hullPoints.length - 1];
+
+            if (this._checkPoints(p0, p1, p2)) {
+                hullPoints.splice(hullPoints.length - 2, 1);
+            }
+
+            if (points.length == 0) {
+                if (pointsLength == hullPoints.length) {
+                    //check for duplicate anchorPoint edge-case, if not found, add the anchorpoint as the first item.
+                    var ap = this.anchorPoint;
+                    //remove any udefined elements in the hullPoints array.
+                    hullPoints = hullPoints.filter(function(p) { return !!p; });
+                    if (!hullPoints.some(function(p){
+                            return(p.x == ap.x && p.y == ap.y);
+                        })) {
+                        hullPoints.unshift(this.anchorPoint);
+                    }
+                    return hullPoints;
+                }
+                points = hullPoints;
+                pointsLength = points.length;
+                hullPoints = [];
+                hullPoints.push(points.shift(), points.shift());
+            }
+        }
+    }
+};
+
+
+
+</script>
+
 <script>
 
 
@@ -60,10 +233,11 @@
 	// var popup = L.popup();
 
 	class Building{
-		constructor(metadata,nodes,tags){
+		constructor(metadata,nodes,tags,polygon){
 			this.metadata = metadata;
 			this.nodes = nodes;
 			this.tags = tags;
+			this.polygon = polygon;
 		}
 	}
 
@@ -75,7 +249,7 @@
 	var polygon;
 	var building;
 
-	var draw_way = function(way_object){
+	var draw_way = function(way_object,index){
 		var nodes = [];
 		var latlongs = way_object["node_references"].forEach(function(ref){
 			if(ref["metadata"] !== undefined){
@@ -85,10 +259,11 @@
 				nodes.push([lat,lon])
 			}
 		})
+		way_object["tags"]["number"] = index;
 		var tags_string = JSON.stringify(way_object["tags"]);
 		if(way_object["tags"]["power"] !== undefined){
 			if(way_object["tags"]["power"] !== "substation"){
-				console.log("Adding polyline " + JSON.stringify(nodes))
+				// console.log("Adding polyline " + JSON.stringify(nodes))
 				polyline = L.polyline(nodes).addTo(mymap);
 				polylines.push(polyline)
 				polyline.bindPopup(tags_string);
@@ -96,14 +271,15 @@
 				polygon = L.polygon(nodes,{color: 'red'}).addTo(mymap)
 				polygons.push(polygon)
 				polygon.bindPopup(tags_string);
-				building = new Building(way_object["metadata"],nodes,way_object["tags"])
+				building = new Building(way_object["metadata"],nodes,way_object["tags"],polygon)
+				building["buildings_served"] = [];
 				substations.push(building);
 			}
 		} else {
 			polygon = L.polygon(nodes,{color: 'green'}).addTo(mymap)
 			polygons.push(polygon)
 			polygon.bindPopup(tags_string);
-			building = new Building(way_object["metadata"],nodes,way_object["tags"])
+			building = new Building(way_object["metadata"],nodes,way_object["tags"],polygon)
 			buildings.push(building);
 		}
 
@@ -115,7 +291,7 @@
 	$.get("http://localhost:3000/latlong",function(data){
 		 
 		var bounds = JSON.parse(data);
-		console.log(bounds[0]);
+		// console.log(bounds[0]);
 		// console.log(data);
 		mymap.fitBounds(bounds);
 
@@ -319,6 +495,214 @@
  	}
 
  	
+</script>
+
+<script>
+//PERFORM ANALYSIS OF NETWORK
+
+function distance_between_two_lat_longs(latlong1,latlong2){
+	var lat_dist = Math.abs(latlong1[0] - latlong2[0]);
+	var long_dist = Math.abs(latlong1[1] - latlong2[1]);
+	return Math.sqrt((lat_dist*lat_dist) + (long_dist*long_dist))
+}
+
+
+function assign_center_to_buildings(building_array){
+	var nodes;
+
+	building_array.forEach(function(building){
+		
+		nodes = building["nodes"];
+		building["center_lat_long"] = get_center(nodes);
+	})
+}
+
+function get_center(nodes){
+	var num_nodes = nodes.length;
+	var lat_sum = 0;
+	var long_sum = 0;
+	nodes.forEach(function(node){
+		lat_sum += node[0];
+		long_sum += node[1];
+	})
+
+
+	var lat_center = lat_sum/num_nodes;
+	var long_center = long_sum/num_nodes;
+	return [lat_center,long_center]
+}
+
+
+function assign_served_buildings_to_substation(substation_array,array_all_buildings){
+
+	var closest_substation;
+
+	var distance;
+	var smallest_distance = Infinity;
+
+	array_all_buildings.forEach(function(building,ind){
+		smallest_distance = Infinity;
+		substation_array.forEach(function(substation){
+			distance = distance_between_two_lat_longs(building["center_lat_long"],substation["center_lat_long"])
+			if(distance < smallest_distance){
+				smallest_distance = distance;
+				closest_substation = substation;
+			}
+		})
+		// console.log(closest_substation)
+		closest_substation["buildings_served"].push(building);
+		building["closest_substation"] = closest_substation;
+	})
+
+
+}
+
+function assign_outer_ring_for_graphing_purposes(substation){
+	substation["outer-ring"] = [];
+
+	var buildings_served = substation["buildings_served"];
+	var point_farthest_north;
+	var point_farthest_south;
+	var point_farthest_east;
+	var point_farthest_west;
+
+	var center; 
+	var latitude;
+	var longitude;
+
+
+	var point;
+	var lat_percentage;
+	var dist;
+
+
+	// for(var i = 1; i<11;i++){
+	// 	lat_percentage = i * .1,
+	// 	long_percentage = 1 - (lat_percentage);
+	// 	console.log("Lat percent " + lat_percentage)
+	// 	console.log("Long percent " + long_percentage)
+
+		
+	// 	var farthest_point_dist = undefined;
+	// 	var point = undefined;
+
+	// 	buildings_served.forEach(function(building){
+	// 		// center = building["center_lat_long"], latitude = center[0], longitude = center[1];
+	// 		center = building["center_lat_long"],
+	// 	 	latitude = center[0] * lat_percentage, 
+	// 	 	longitude = center[1] * long_percentage;
+	// 	 	dist = latitude + longitude
+
+	// 	 	if(point !== undefined){
+	// 	 		farthest_point_dist = point["center_lat_long"][0] * lat_percentage + point["center_lat_long"][1] * long_percentage;
+	// 	 	}
+
+		
+
+	// 		if(point === undefined || dist > farthest_point_dist){
+	// 			console.log(point)
+	// 			point = building;
+	// 			// console.log(point_farthest_north)
+	// 		}
+
+	// 	})
+
+	// 	substation["outer-ring"].push(point)
+
+
+
+	// }
+
+	for(var j = -10; j<11; j++){
+		lat_percentage = j * .1
+		if(lat_percentage <= 0){
+			long_percentage = 1 + lat_percentage;
+		}
+		
+		console.log("lat" + lat_percentage)
+		console.log("long" + long_percentage)
+		
+		var farthest_point_dist = undefined;
+		var point = undefined;
+		var center;
+
+		buildings_served.forEach(function(building){
+			// center = building["center_lat_long"], latitude = center[0], longitude = center[1];
+			center = building["center_lat_long"];
+
+		 	if(point !== undefined){
+		 		// console.log("point " + point);
+		 		latitude = (substation["center_lat_long"][0] - center[0]) * lat_percentage, 
+		 		longitude = (substation["center_lat_long"][1] - center[1]) * long_percentage,
+		 		dist = latitude + longitude;
+		 		// console.log("dist" + dist);
+
+		 		farthest_point_dist = ((substation["center_lat_long"][0] - point["center_lat_long"][0]) * lat_percentage) + ((substation["center_lat_long"][1] - point["center_lat_long"][1]) * long_percentage);
+		 		// console.log("farthest dist" + farthest_point_dist)
+		 	}
+
+		
+
+			if(point === undefined || dist > farthest_point_dist){
+				
+				point = building;
+				// console.log(point)
+				// console.log("HERE")
+				// console.log("CLAUSE" + (substation["center_lat_long"][0] - point["center_lat_long"][0]));
+				farthest_point_dist = ((substation["center_lat_long"][0] - point["center_lat_long"][0]) * lat_percentage) + ((substation["center_lat_long"][1] - point["center_lat_long"][1]) * long_percentage);
+			    // console.log("FARTHEST" + farthest_point_dist)
+			}
+
+		})
+
+		substation["outer-ring"].push(point)
+
+
+	}
+
+
+
+	// substation["outer-ring"] = [point_farthest_north,point_farthest_east,point_farthest_south,point_farthest_west];
+
+}
+
+function map_outer_ring(substation){
+	var nodes_in_ring = substation["outer-ring"].map(function(building){return building["center_lat_long"]});
+	// console.log(nodes_in_ring)
+	polygon = L.polygon(nodes_in_ring,{color: 'yellow'}).addTo(mymap);
+}
+
+function map_served_buildings(){
+	var convexHull = new ConvexHullGrahamScan();
+	var hullPoints;
+	var nodes;
+
+	substations.forEach(function(substation){
+
+		substation.buildings_served.forEach(function(building){var center = building["center_lat_long"],lat = center[0], long = center[1];convexHull.addPoint(lat,long);});
+
+		hullPoints = convexHull.getHull();
+
+		nodes = hullPoints.map(function(point){return [point.x,point.y]});
+
+		nodes.push(nodes[0]);
+
+		L.polyline(nodes).addTo(mymap,{"color":'green'});
+	})
+}
+
+function go(){
+
+	power_data["Ways"].forEach(function(way,index){draw_way(way,index)});
+
+	assign_center_to_buildings(buildings)
+	assign_center_to_buildings(substations)
+	assign_served_buildings_to_substation(substations,buildings)
+	map_served_buildings();
+
+	// substations[0].buildings_served.forEach(function(building){building['polygon'].setStyle({color:'yellow'})})
+}
+
 </script>
 
 
