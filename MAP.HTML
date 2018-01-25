@@ -333,7 +333,7 @@ ConvexHullGrahamScan.prototype = {
 		grid_boxes = boxes;
 		boxes.forEach(function(box){
 			// console.log('BOX' + typeof box);
-			draw_grid(box);
+			// draw_grid(box);
 		})
 		// console.log(data);
 		
@@ -554,115 +554,6 @@ function assign_served_buildings_to_substation(substation_array,array_all_buildi
 		building["closest_substation"] = closest_substation;
 	})
 
-
-}
-
-function assign_outer_ring_for_graphing_purposes(substation){
-	substation["outer-ring"] = [];
-
-	var buildings_served = substation["buildings_served"];
-	var point_farthest_north;
-	var point_farthest_south;
-	var point_farthest_east;
-	var point_farthest_west;
-
-	var center; 
-	var latitude;
-	var longitude;
-
-
-	var point;
-	var lat_percentage;
-	var dist;
-
-
-	// for(var i = 1; i<11;i++){
-	// 	lat_percentage = i * .1,
-	// 	long_percentage = 1 - (lat_percentage);
-	// 	console.log("Lat percent " + lat_percentage)
-	// 	console.log("Long percent " + long_percentage)
-
-		
-	// 	var farthest_point_dist = undefined;
-	// 	var point = undefined;
-
-	// 	buildings_served.forEach(function(building){
-	// 		// center = building["center_lat_long"], latitude = center[0], longitude = center[1];
-	// 		center = building["center_lat_long"],
-	// 	 	latitude = center[0] * lat_percentage, 
-	// 	 	longitude = center[1] * long_percentage;
-	// 	 	dist = latitude + longitude
-
-	// 	 	if(point !== undefined){
-	// 	 		farthest_point_dist = point["center_lat_long"][0] * lat_percentage + point["center_lat_long"][1] * long_percentage;
-	// 	 	}
-
-		
-
-	// 		if(point === undefined || dist > farthest_point_dist){
-	// 			console.log(point)
-	// 			point = building;
-	// 			// console.log(point_farthest_north)
-	// 		}
-
-	// 	})
-
-	// 	substation["outer-ring"].push(point)
-
-
-
-	// }
-
-	for(var j = -10; j<11; j++){
-		lat_percentage = j * .1
-		if(lat_percentage <= 0){
-			long_percentage = 1 + lat_percentage;
-		}
-		
-		console.log("lat" + lat_percentage)
-		console.log("long" + long_percentage)
-		
-		var farthest_point_dist = undefined;
-		var point = undefined;
-		var center;
-
-		buildings_served.forEach(function(building){
-			// center = building["center_lat_long"], latitude = center[0], longitude = center[1];
-			center = building["center_lat_long"];
-
-		 	if(point !== undefined){
-		 		// console.log("point " + point);
-		 		latitude = (substation["center_lat_long"][0] - center[0]) * lat_percentage, 
-		 		longitude = (substation["center_lat_long"][1] - center[1]) * long_percentage,
-		 		dist = latitude + longitude;
-		 		// console.log("dist" + dist);
-
-		 		farthest_point_dist = ((substation["center_lat_long"][0] - point["center_lat_long"][0]) * lat_percentage) + ((substation["center_lat_long"][1] - point["center_lat_long"][1]) * long_percentage);
-		 		// console.log("farthest dist" + farthest_point_dist)
-		 	}
-
-		
-
-			if(point === undefined || dist > farthest_point_dist){
-				
-				point = building;
-				// console.log(point)
-				// console.log("HERE")
-				// console.log("CLAUSE" + (substation["center_lat_long"][0] - point["center_lat_long"][0]));
-				farthest_point_dist = ((substation["center_lat_long"][0] - point["center_lat_long"][0]) * lat_percentage) + ((substation["center_lat_long"][1] - point["center_lat_long"][1]) * long_percentage);
-			    // console.log("FARTHEST" + farthest_point_dist)
-			}
-
-		})
-
-		substation["outer-ring"].push(point)
-
-
-	}
-
-
-
-	// substation["outer-ring"] = [point_farthest_north,point_farthest_east,point_farthest_south,point_farthest_west];
 
 }
 
