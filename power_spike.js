@@ -1,5 +1,6 @@
-
 "use strict";
+
+var fs = require("fs")
 
 class Node {
     constructor(metadata, tags) {
@@ -516,7 +517,7 @@ var get_objects_for_box = function(left, bottom, right, top) {
              console.log("Found " + power_data["Nodes"].length + " nodes");
              console.log("Found " + power_data["Ways"].length + " ways");
              console.log("Found " + power_data["Relations"].length + " relations");
-             power_data = JSON.stringify(power_data);
+             turn_node_references_to_objects()
         }
         // power_data = JSON.stringify(power_data);
         
@@ -525,6 +526,101 @@ var get_objects_for_box = function(left, bottom, right, top) {
 
 var boxes_coords;
 
+
+function read_data_if_there(left,bottom,right,top){
+    var file_name = left + "," + bottom + "," + right + ',' + top;
+    var files = fs.readdirSync(__dirname + "/serialized_files");
+    console.log(files)
+    if(files.indexOf(file_name) !== -1){
+        var path = __dirname + "/serialized_files/" + file_name
+        return fs.readFileSync(path);
+    } else {
+        return false;
+    }
+}
+function serialize(){
+    var file_name = left + "," + bottom + "," + right + ',' + top
+    console.log("Serializing to file " + file_name)
+    fs.writeFileSync(__dirname + "/serialized_files/" + file_name,power_data)
+    
+}
+
+function create_dictionary_node_id_to_obj(node_arr){
+    var dict = {};
+    var id;
+
+    node_arr.forEach(function(node){
+        id = node["metadata"]["node id"];
+        dict[id] = node;
+    })
+
+    return dict;
+}
+
+function turn_array_to_comma_separated_list(arr){
+    var str = "";
+    arr.forEach(function(elem,ind){
+        if(ind < arr.length-1){
+            str = str + elem + ",";
+        } else {
+            str = str + elem;
+        }
+    })
+    return str;
+
+}
+
+function get_unfound_nodes_from_OSM_API(unfound_array){
+    var url = 'https://api.openstreetmap.org/api/0.6/nodes?nodes=' + 
+    turn_array_to_comma_separated_list(unfound_array);
+
+    request(url, function(error, response, body) {
+      var data = read_xml(body);
+      var dictionary_node_id_to_obj = create_dictionary_node_id_to_obj(data["Nodes"]);
+      var node_obj;
+
+        power_data["Ways"].forEach(function(Way){
+            Way.node_references.forEach(function(node_id,ind){
+                node_obj = dictionary_node_id_to_obj[node_id];
+                    Way["node_references"][ind] = dictionary_node_id_to_obj[node_id];
+            })
+        })  
+        // console.log(power_data["Ways"])
+        power_data = JSON.stringify(power_data);
+        serialize();
+        
+    });
+
+
+}
+
+function turn_node_references_to_objects(){
+    var dictionary_node_id_to_obj = create_dictionary_node_id_to_obj(power_data["Nodes"]);
+    var unfound_array = [];
+    // console.log("Length is");
+    // console.log(Object.keys(dictionary_node_id_to_obj).length)
+    var node_obj;
+
+    power_data["Ways"].forEach(function(Way){
+        Way.node_references.forEach(function(node_id,ind){
+            node_obj = dictionary_node_id_to_obj[node_id];
+            // console.log(typeof node_obj)
+            if(typeof node_obj !== "object" && typeof node_id === "string"){
+                // console.log(node_id);
+                unfound_array.push(node_id);
+            } else {
+                // console.log("HERE")
+                Way["node_references"][ind] = dictionary_node_id_to_obj[node_id];
+                // console.log(dictionary_node_id_to_obj[node_id]);
+            }
+        })
+    })
+    console.log("Didn't find these nodes ")
+    console.log(power_data["Ways"])
+    console.log(unfound_array);
+    get_unfound_nodes_from_OSM_API(unfound_array)
+    power_data["Nodes"] = [];
+}
 
 var turn_coords_into_grid = function(coords) {
     var boxes = [];
@@ -571,16 +667,18 @@ var turn_coords_into_grid = function(coords) {
 
 
 
-var get_power_objects_by_coordinates = function(left, botton, right, top) {
-    var boxes = turn_coords_into_grid([left, bottom, right, top])
-    boxes_expected = boxes.length;
-    console.log("Found " + boxes_expected + " boxes in the area you're pulling data for");
-    boxes.forEach(function(box, ind) {
-        get_objects_for_box(box[0], box[1], box[2], box[3]);
-    });
-
-    // power_data = JSON.stringify(power_data);
-
+var get_power_objects_by_coordinates = function(left, bottom, right, top) {
+    var serialized_data = read_data_if_there(left,bottom,right,top)
+    if(serialized_data !== false){
+        power_data = JSON. parse(serialized_data);
+    } else {
+        var boxes = turn_coords_into_grid([left, bottom, right, top])
+        boxes_expected = boxes.length;
+        console.log("Found " + boxes_expected + " boxes in the area you're pulling data for");
+        boxes.forEach(function(box, ind) {
+            get_objects_for_box(box[0], box[1], box[2], box[3]);
+        });
+    }
 }
 
 var app = require("express")();

@@ -144,7 +144,13 @@
 	})
 
 	$.get("http://localhost:3000/data",function(data){
-		power_data = JSON.parse(data);
+		console.log(data);
+		if(typeof data !== "string"){
+			power_data = data;
+		} else {
+			power_data = JSON.parse(data);
+		}
+		
 		// console.log(data);
 		
 
