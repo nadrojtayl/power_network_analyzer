@@ -28,6 +28,179 @@
 
 
 <div id="mapid" style="width: 1800px; height: 1200px;"></div>
+
+<script>
+
+/**
+ * Graham's Scan Convex Hull Algorithm
+ * @desc An implementation of the Graham's Scan Convex Hull algorithm in JavaScript.
+ * @author Brian Barnett, brian@3kb.co.uk, http://brianbar.net/ || http://3kb.co.uk/
+ * @version 1.0.5
+ */
+function ConvexHullGrahamScan() {
+    this.anchorPoint = undefined;
+    this.reverse = false;
+    this.points = [];
+}
+
+ConvexHullGrahamScan.prototype = {
+
+    constructor: ConvexHullGrahamScan,
+
+    Point: function (x, y) {
+        this.x = x;
+        this.y = y;
+    },
+
+    _findPolarAngle: function (a, b) {
+        var ONE_RADIAN = 57.295779513082;
+        var deltaX, deltaY;
+
+        //if the points are undefined, return a zero difference angle.
+        if (!a || !b) return 0;
+
+        deltaX = (b.x - a.x);
+        deltaY = (b.y - a.y);
+
+        if (deltaX == 0 && deltaY == 0) {
+            return 0;
+        }
+
+        var angle = Math.atan2(deltaY, deltaX) * ONE_RADIAN;
+
+        if (this.reverse){
+            if (angle <= 0) {
+                angle += 360;
+            }
+        }else{
+            if (angle >= 0) {
+                angle += 360;
+            }
+        }
+
+        return angle;
+    },
+
+    addPoint: function (x, y) {
+        //Check for a new anchor
+        var newAnchor =
+            (this.anchorPoint === undefined) ||
+            ( this.anchorPoint.y > y ) ||
+            ( this.anchorPoint.y === y && this.anchorPoint.x > x );
+
+        if ( newAnchor ) {
+            if ( this.anchorPoint !== undefined ) {
+                this.points.push(new this.Point(this.anchorPoint.x, this.anchorPoint.y));
+            }
+            this.anchorPoint = new this.Point(x, y);
+        } else {
+            this.points.push(new this.Point(x, y));
+        }
+    },
+
+    _sortPoints: function () {
+        var self = this;
+
+        return this.points.sort(function (a, b) {
+            var polarA = self._findPolarAngle(self.anchorPoint, a);
+            var polarB = self._findPolarAngle(self.anchorPoint, b);
+
+            if (polarA < polarB) {
+                return -1;
+            }
+            if (polarA > polarB) {
+                return 1;
+            }
+
+            return 0;
+        });
+    },
+
+    _checkPoints: function (p0, p1, p2) {
+        var difAngle;
+        var cwAngle = this._findPolarAngle(p0, p1);
+        var ccwAngle = this._findPolarAngle(p0, p2);
+
+        if (cwAngle > ccwAngle) {
+
+            difAngle = cwAngle - ccwAngle;
+
+            return !(difAngle > 180);
+
+        } else if (cwAngle < ccwAngle) {
+
+            difAngle = ccwAngle - cwAngle;
+
+            return (difAngle > 180);
+
+        }
+
+        return true;
+    },
+
+    getHull: function () {
+        var hullPoints = [],
+            points,
+            pointsLength;
+
+        this.reverse = this.points.every(function(point){
+            return (point.x < 0 && point.y < 0);
+        });
+
+        points = this._sortPoints();
+        pointsLength = points.length;
+
+        //If there are less than 3 points, joining these points creates a correct hull.
+        if (pointsLength < 3) {
+            points.unshift(this.anchorPoint);
+            return points;
+        }
+
+        //move first two points to output array
+        hullPoints.push(points.shift(), points.shift());
+
+        //scan is repeated until no concave points are present.
+        while (true) {
+            var p0,
+                p1,
+                p2;
+
+            hullPoints.push(points.shift());
+
+            p0 = hullPoints[hullPoints.length - 3];
+            p1 = hullPoints[hullPoints.length - 2];
+            p2 = hullPoints[hullPoints.length - 1];
+
+            if (this._checkPoints(p0, p1, p2)) {
+                hullPoints.splice(hullPoints.length - 2, 1);
+            }
+
+            if (points.length == 0) {
+                if (pointsLength == hullPoints.length) {
+                    //check for duplicate anchorPoint edge-case, if not found, add the anchorpoint as the first item.
+                    var ap = this.anchorPoint;
+                    //remove any udefined elements in the hullPoints array.
+                    hullPoints = hullPoints.filter(function(p) { return !!p; });
+                    if (!hullPoints.some(function(p){
+                            return(p.x == ap.x && p.y == ap.y);
+                        })) {
+                        hullPoints.unshift(this.anchorPoint);
+                    }
+                    return hullPoints;
+                }
+                points = hullPoints;
+                pointsLength = points.length;
+                hullPoints = [];
+                hullPoints.push(points.shift(), points.shift());
+            }
+        }
+    }
+};
+
+
+
+</script>
+
 <script>
 
 
@@ -55,25 +228,28 @@
 		[51.509, -0.08],
 		[51.503, -0.06],
 		[51.51, -0.047]
-	]).addTo(mymap)
+	],{color: 'red'}).addTo(mymap)	
 
 	// var popup = L.popup();
 
 	class Building{
-		constructor(metadata,nodes,tags){
+		constructor(metadata,nodes,tags,polygon){
 			this.metadata = metadata;
 			this.nodes = nodes;
 			this.tags = tags;
+			this.polygon = polygon;
 		}
 	}
 
 	var buildings = [];
+	var substations = [];
 	var polygons = [];
+	var polylines = [];
 	var power_data;
 	var polygon;
 	var building;
 
-	var draw_building = function(way_object){
+	var draw_way = function(way_object,index){
 		var nodes = [];
 		var latlongs = way_object["node_references"].forEach(function(ref){
 			if(ref["metadata"] !== undefined){
@@ -83,20 +259,40 @@
 				nodes.push([lat,lon])
 			}
 		})
+		way_object["tags"]["number"] = index;
 		var tags_string = JSON.stringify(way_object["tags"]);
-		polygon = L.polygon(nodes).addTo(mymap)
-		polygons.push(polygon)
-		polygon.bindPopup(tags_string);
-		building = new Building(way_object["metadata"],nodes,way_object["tags"])
-		buildings.push(building);
+		if(way_object["tags"]["power"] !== undefined){
+			if(way_object["tags"]["power"] !== "substation"){
+				// console.log("Adding polyline " + JSON.stringify(nodes))
+				polyline = L.polyline(nodes).addTo(mymap);
+				polylines.push(polyline)
+				polyline.bindPopup(tags_string);
+			} else {
+				polygon = L.polygon(nodes,{color: 'red'}).addTo(mymap)
+				polygons.push(polygon)
+				polygon.bindPopup(tags_string);
+				building = new Building(way_object["metadata"],nodes,way_object["tags"],polygon)
+				building["buildings_served"] = [];
+				substations.push(building);
+			}
+		} else {
+			polygon = L.polygon(nodes,{color: 'green'}).addTo(mymap)
+			polygons.push(polygon)
+			polygon.bindPopup(tags_string);
+			building = new Building(way_object["metadata"],nodes,way_object["tags"],polygon)
+			buildings.push(building);
+		}
+
 
 	}
 
 	
 
 	$.get("http://localhost:3000/latlong",function(data){
+		 
 		var bounds = JSON.parse(data);
-		console.log(data);
+		// console.log(bounds[0]);
+		// console.log(data);
 		mymap.fitBounds(bounds);
 
 	})
@@ -104,7 +300,7 @@
 	var grid_boxes;
 
 	var draw_grid = function(boxes_array){
-		console.log("ARR" + boxes_array);
+		// console.log("ARR" + boxes_array);
 		var left;
 		var bottom;
 		var right;
@@ -123,7 +319,7 @@
 			[top,left]
 
 		]
-		 console.log("BOX AFTER" + bound_box);
+		 // console.log("BOX AFTER" + bound_box);
 
 		L.polygon(bound_box).addTo(mymap)
 
@@ -131,12 +327,13 @@
 	}
 
 	$.get("http://localhost:3000/boxes",function(data){
+		// console.log("HERE1")
 		boxes = JSON.parse(data);
-		console.log("boxes" + boxes);
+		// console.log("boxes" + boxes);
 		grid_boxes = boxes;
 		boxes.forEach(function(box){
-			console.log('BOX' + typeof box);
-			draw_grid(box);
+			// console.log('BOX' + typeof box);
+			// draw_grid(box);
 		})
 		// console.log(data);
 		
@@ -144,17 +341,261 @@
 	})
 
 	$.get("http://localhost:3000/data",function(data){
-		console.log(data);
+
 		if(typeof data !== "string"){
 			power_data = data;
 		} else {
 			power_data = JSON.parse(data);
 		}
-		
 		// console.log(data);
 		
 
 	})
+
+</script>
+<script>
+//clustering algorithm for building perims
+	var add_perimeters_to_buildings = function(){
+		buildings.forEach(function(building){
+			building["perimeter"] = get_perimeter(building["nodes"]);
+		})
+	}
+
+
+ 	// console.log(segment_length([1,2],[2,3]));
+
+ 	var get_percentage_of_differences = function(arr){
+ 		var percentages = [];
+ 		var sum = 0;
+ 		var pct;
+
+ 		arr.forEach(function(diff,ind){
+ 			sum = sum + diff;
+ 			avg = sum/(ind + 1);
+ 			pct = diff/avg;
+ 			percentages.push(pct);
+
+ 		})
+ 		return percentages;
+
+ 	}
+
+ 	var cluster_buildings = function(numbers){
+ 		//find a better, machine learning k means clustering way to do this later
+
+ 		var sorted = numbers.sort(function(a,b){
+ 			if(a>b){return 1} return -1;
+ 		});
+ 		// console.log("SORTED " + sorted)
+ 		
+ 		var differences = [];
+ 		for(var i =1; i < sorted.length; i++){
+ 			differences.push(sorted[i] - sorted[i-1]);
+ 		}
+ 		// console.log("SORTEDX " + sorted);
+ 		
+
+ 		// var sum_of_differences = differences.reduce(function(a,b){return a+b;})
+
+ 		// var percentage_of_differences = differences.map(function(num){return num/sum_of_differences})
+// 
+ 		 var percentage_of_differences = get_percentage_of_differences(differences);
+ 		
+ 		 // console.log("END_RESULT" + percentage_of_differences)
+ 		
+
+ 		var sorted_percentage_of_differences = copy_then_sort_array_max_to_lowest(percentage_of_differences);
+
+ 		// console.log("SORTED DIFFS " + sorted_percentage_of_differences);
+
+ 		var n = sorted.length/2;
+
+ 	//	var curr_amount_difference_between_clusters = 0;
+ 		var curr_max_goodness;
+ 		var num_break_points;
+ 		var goodness;
+
+ 		var differences = {};
+
+ 		var indexes_to_split_clusters_at = {};
+ 		// console.log()
+ 		for(var j=1;j<n;j++){
+ 		//	curr_amount_difference_between_clusters = curr_amount_difference_between_clusters + sorted_percentage_of_differences[i];
+ 			goodness = sorted_percentage_of_differences[j] - sorted_percentage_of_differences[j-1]
+ 			// console.log("index " + j)
+ 			if(curr_max_goodness<Math.abs(goodness) || curr_max_goodness === undefined){
+ 				curr_max_goodness = Math.abs(goodness);
+ 				// console.log("GOODNESS " + goodness)
+ 				num_break_points = j;
+ 			}
+ 		}
+ 		// console.log("MAX GOOD" + curr_max_goodness)
+ 		// console.log("Clusters " + num_clusters)
+
+ 		for(var k = 0;k<num_break_points;k++){
+ 			differences[sorted_percentage_of_differences[k]] = true;
+ 		}
+ 		 
+ 		// console.log("DIFFS " + JSON.stringify(differences));
+
+ 		for(var l = 0;l<percentage_of_differences.length;l++){
+ 			if(differences[percentage_of_differences[l]]){
+ 				indexes_to_split_clusters_at[l] = true;
+ 			}
+ 		}
+
+ 		var clusters = [];
+ 		var curr_cluster = []
+ 		for(var m = 0; m<sorted.length;m++){
+ 			curr_cluster.push(sorted[m]);
+ 			if(indexes_to_split_clusters_at[m]){
+ 				clusters.push(curr_cluster);
+ 				curr_cluster = [];
+ 			}
+ 		}
+
+ 		clusters.push(curr_cluster);
+
+ 		return clusters
+ 		
+
+ 	}
+
+ 	function copy_then_sort_array_max_to_lowest(arr){
+ 		var new_arr = [];
+ 		arr.forEach(function(num){
+ 			new_arr.push(num);
+ 		})
+
+ 		new_arr.sort(function(a,b){
+ 			if(a<b){return 1} return -1;
+ 		});
+ 		// console.log("ARR " + new_arr)
+
+ 		return new_arr;
+ 	}
+
+</script>
+<script>
+	 var segment_length = function(node1,node2){
+ 		var lat_diff = Math.abs(node1[0] - node2[0]);
+
+ 		var long_diff = Math.abs(node1[1] - node2[1]);
+
+ 		var seg_length = Math.sqrt(lat_diff*lat_diff + long_diff*long_diff)
+ 		// console.log(lat_diff*lat_diff)
+ 		return seg_length
+ 	}
+
+ 	 var get_perimeter = function(nodes){
+ 	 	var perimeter = 0
+ 	 	var seg_length;
+ 	 	for(var i = 1;i<nodes.length;i++){
+ 	 		seg_length = segment_length(nodes[i-1],nodes[i]);
+ 	 		perimeter = perimeter + seg_length;
+ 	 	}
+ 	 	return perimeter;
+ 	}
+
+ 	
+</script>
+
+<script>
+//PERFORM ANALYSIS OF NETWORK
+
+function distance_between_two_lat_longs(latlong1,latlong2){
+	var lat_dist = Math.abs(latlong1[0] - latlong2[0]);
+	var long_dist = Math.abs(latlong1[1] - latlong2[1]);
+	return Math.sqrt((lat_dist*lat_dist) + (long_dist*long_dist))
+}
+
+
+function assign_center_to_buildings(building_array){
+	var nodes;
+
+	building_array.forEach(function(building){
+		
+		nodes = building["nodes"];
+		building["center_lat_long"] = get_center(nodes);
+	})
+}
+
+function get_center(nodes){
+	var num_nodes = nodes.length;
+	var lat_sum = 0;
+	var long_sum = 0;
+	nodes.forEach(function(node){
+		lat_sum += node[0];
+		long_sum += node[1];
+	})
+
+
+	var lat_center = lat_sum/num_nodes;
+	var long_center = long_sum/num_nodes;
+	return [lat_center,long_center]
+}
+
+
+function assign_served_buildings_to_substation(substation_array,array_all_buildings){
+
+	var closest_substation;
+
+	var distance;
+	var smallest_distance = Infinity;
+
+	array_all_buildings.forEach(function(building,ind){
+		smallest_distance = Infinity;
+		substation_array.forEach(function(substation){
+			distance = distance_between_two_lat_longs(building["center_lat_long"],substation["center_lat_long"])
+			if(distance < smallest_distance){
+				smallest_distance = distance;
+				closest_substation = substation;
+			}
+		})
+		// console.log(closest_substation)
+		closest_substation["buildings_served"].push(building);
+		building["closest_substation"] = closest_substation;
+	})
+
+
+}
+
+function map_outer_ring(substation){
+	var nodes_in_ring = substation["outer-ring"].map(function(building){return building["center_lat_long"]});
+	// console.log(nodes_in_ring)
+	polygon = L.polygon(nodes_in_ring,{color: 'yellow'}).addTo(mymap);
+}
+
+function map_served_buildings(){
+	var convexHull = new ConvexHullGrahamScan();
+	var hullPoints;
+	var nodes;
+
+	substations.forEach(function(substation){
+
+		substation.buildings_served.forEach(function(building){var center = building["center_lat_long"],lat = center[0], long = center[1];convexHull.addPoint(lat,long);});
+
+		hullPoints = convexHull.getHull();
+
+		nodes = hullPoints.map(function(point){return [point.x,point.y]});
+
+		nodes.push(nodes[0]);
+
+		L.polyline(nodes).addTo(mymap,{"color":'green'});
+	})
+}
+
+function go(){
+
+	power_data["Ways"].forEach(function(way,index){draw_way(way,index)});
+
+	assign_center_to_buildings(buildings)
+	assign_center_to_buildings(substations)
+	assign_served_buildings_to_substation(substations,buildings)
+	map_served_buildings();
+
+	// substations[0].buildings_served.forEach(function(building){building['polygon'].setStyle({color:'yellow'})})
+}
 
 </script>
 
