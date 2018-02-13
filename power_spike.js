@@ -449,13 +449,18 @@ var read_xml = function(xml_string) {
 
 
 
-var tag_filter = function(xml_results_array, search_term) {
+var tag_filter = function(xml_results_array, search_term_array) {
 
     var tag_filter_helper = function(object) {
-        if (object["tags"][search_term] !== undefined) {
-            return true
-        }
-        return false;
+        var return_value = false;
+
+        search_term_array.forEach(function(term){
+          if (object["tags"][term] !== undefined) {
+            return_value = true;
+          }  
+        })
+
+        return return_value;
     }
 
     var filtered = {
@@ -659,7 +664,7 @@ var get_objects_for_box = function(left, bottom, right, top) {
 
         // data = change_node_or_way_references_to_objects(data);
 
-        var box_data = tag_filter(data, "building");
+        var box_data = tag_filter(data, ["building","power"]);
 
         box_data = change_node_or_way_references_to_objects(box_data);
 
@@ -676,13 +681,6 @@ var get_objects_for_box = function(left, bottom, right, top) {
         boxes_loaded = boxes_loaded + 1;
         console.log("Loaded " + boxes_loaded + " of " + boxes_expected + "boxes");
         if(boxes_loaded === boxes_expected){
-<<<<<<< HEAD
-             console.log("Server ready to send power data");
-             console.log("Found " + power_data["Nodes"].length + " nodes");
-             console.log("Found " + power_data["Ways"].length + " ways");
-             console.log("Found " + power_data["Relations"].length + " relations");
-             turn_node_references_to_objects()
-=======
             console.log("Didn't find these nodes " + unfound);
              console.log("Fetching those nodes");
             if(unfound.length > 0){
@@ -701,7 +699,6 @@ var get_objects_for_box = function(left, bottom, right, top) {
              
              // power_data = JSON.stringify(power_data);
              
->>>>>>> 24659d860d829408f7e9b4429ebb281f642a2715
         }
         // power_data = JSON.stringify(power_data);
         
@@ -712,11 +709,12 @@ var boxes_coords;
 
 
 function read_data_if_there(left,bottom,right,top){
-    var file_name = left + "," + bottom + "," + right + ',' + top;
-    var files = fs.readdirSync(__dirname + "/serialized_files");
+    var file_name = left + "," + bottom + "," + right + ',' + top + ".json";
+    console.log("TRYING TO READ FROM " + file_name)
+    var files = fs.readdirSync(__dirname + "/serialized_osm_data");
     console.log(files)
     if(files.indexOf(file_name) !== -1){
-        var path = __dirname + "/serialized_files/" + file_name
+        var path = __dirname + "/serialized_osm_data/" + file_name
         return fs.readFileSync(path);
     } else {
         return false;
@@ -725,7 +723,7 @@ function read_data_if_there(left,bottom,right,top){
 function serialize(){
     var file_name = left + "," + bottom + "," + right + ',' + top
     console.log("Serializing to file " + file_name)
-    fs.writeFileSync(__dirname + "/serialized_files/" + file_name,power_data)
+    fs.writeFileSync(__dirname + "/serialized_osm_data/" + file_name,power_data)
     
 }
 
@@ -852,17 +850,9 @@ var turn_coords_into_grid = function(coords) {
 
 
 var get_power_objects_by_coordinates = function(left, bottom, right, top) {
-<<<<<<< HEAD
     var serialized_data = read_data_if_there(left,bottom,right,top)
     if(serialized_data !== false){
         power_data = JSON. parse(serialized_data);
-=======
-    var file_name_if_serialized_already = left + "," + bottom + "," + right + "," + top;
-    if(load_serialized_data_if_its_there(file_name_if_serialized_already)){
-        ///load grid so it can be seen on map
-        turn_coords_into_grid([left, bottom, right, top]);
-        console.log("Loaded data from file")
->>>>>>> 24659d860d829408f7e9b4429ebb281f642a2715
     } else {
         var boxes = turn_coords_into_grid([left, bottom, right, top])
         boxes_expected = boxes.length;
@@ -870,16 +860,8 @@ var get_power_objects_by_coordinates = function(left, bottom, right, top) {
         boxes.forEach(function(box, ind) {
             get_objects_for_box(box[0], box[1], box[2], box[3]);
         });
-<<<<<<< HEAD
-    }
-=======
-
     }
 
-
-    // power_data = JSON.stringify(power_data);
-
->>>>>>> 24659d860d829408f7e9b4429ebb281f642a2715
 }
 
 var app = require("express")();
