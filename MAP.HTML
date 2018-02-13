@@ -238,18 +238,23 @@ ConvexHullGrahamScan.prototype = {
 			this.nodes = nodes;
 			this.tags = tags;
 			this.polygon = polygon;
+			this.center_lat_long = get_center(this.nodes);
+			this.draw = function(){
+				this.polygon.addTo(mymap);
+			}
 		}
 	}
 
 	var buildings = [];
 	var substations = [];
+	var guessed_substations = [];
 	var polygons = [];
 	var polylines = [];
 	var power_data;
 	var polygon;
 	var building;
 
-	var draw_way = function(way_object,index){
+	var populate_way = function(way_object,index){
 		var nodes = [];
 		var latlongs = way_object["node_references"].forEach(function(ref){
 			if(ref["metadata"] !== undefined){
@@ -268,7 +273,7 @@ ConvexHullGrahamScan.prototype = {
 				polylines.push(polyline)
 				polyline.bindPopup(tags_string);
 			} else {
-				polygon = L.polygon(nodes,{color: 'red'}).addTo(mymap)
+				polygon = L.polygon(nodes,{color: 'red'})
 				polygons.push(polygon)
 				polygon.bindPopup(tags_string);
 				building = new Building(way_object["metadata"],nodes,way_object["tags"],polygon)
@@ -276,7 +281,7 @@ ConvexHullGrahamScan.prototype = {
 				substations.push(building);
 			}
 		} else {
-			polygon = L.polygon(nodes,{color: 'green'}).addTo(mymap)
+			polygon = L.polygon(nodes,{color: 'green'})
 			polygons.push(polygon)
 			polygon.bindPopup(tags_string);
 			building = new Building(way_object["metadata"],nodes,way_object["tags"],polygon)
@@ -285,12 +290,16 @@ ConvexHullGrahamScan.prototype = {
 
 
 	}
-
+	var bounds;
+	var left;
+	var bottom;
+	var right;
+	var top;
 	
 
 	$.get("http://localhost:3000/latlong",function(data){
-		 
-		var bounds = JSON.parse(data);
+		
+		bounds = JSON.parse(data);
 		// console.log(bounds[0]);
 		// console.log(data);
 		mymap.fitBounds(bounds);
@@ -587,18 +596,226 @@ function map_served_buildings(){
 
 function go(){
 
-	power_data["Ways"].forEach(function(way,index){draw_way(way,index)});
+	power_data["Ways"].forEach(function(way,index){populate_way(way,index)});
 
 	assign_center_to_buildings(buildings)
 	assign_center_to_buildings(substations)
 	assign_served_buildings_to_substation(substations,buildings)
-	map_served_buildings();
+	// map_served_buildings();
 
 	// substations[0].buildings_served.forEach(function(building){building['polygon'].setStyle({color:'yellow'})})
 }
 
-</script>
+//GRID ANALYSIS
 
+class Grid_Box {
+		//class for one half mile square on map
+		//records contained buildings
+		//records contained substations
+		//records number of unserved buildings
+		//records all adjacent neighbors in an array of neighboring boxes
+		//has a function is present in grid box that takes a lat long and return if that lat long (usually the center of a building) is in this box
+		//has a function add to buildings contained
+		//has a function add to substations contained
+		//has a function update unserved buildings
+		//has a function add guessed substation
+		//has a function update unserved buildings
+		constructor(left,bottom,right,top){
+
+			this.left = left;
+			this.bottom = bottom;
+			this.right = right;
+			this.top = top;
+			this.contained_buildings = [];
+			this.contained_substations = [];
+			this.rectangle;
+			this.unserved_buildings;
+			this.contained_and_adjacent_subs;
+			this.adjacent_boxes = [];
+
+			this.highlight = function(){
+				this.rectangle.setStyle({fillColor:"yellow"})
+			}
+
+			this.random_building = function(){
+				var rand_index = Math.floor(Math.random() * this.contained_buildings.length);
+				return this.contained_buildings[rand_index]
+ 			}
+
+ 			this.add_guessed_substation = function(){
+ 				var rand_building = this.random_building();
+ 				rand_building.guessed_sub = true;
+ 				substations.push(rand_building);
+ 				guessed_substations.push(rand_building);
+ 				this.contained_substations.push(rand_building);
+ 				rand_building.draw();
+ 				this.update_num_unserved();
+ 				this.adjacent_boxes.forEach(function(box){
+ 					box.update_num_unserved();
+ 				})
+ 			}
+
+			this.find_adjacent_boxes = function(){
+				var that = this;
+				var half_mile =  .007246;
+				
+				grid.forEach(function(box){
+					var bottom_dif = Math.abs(box.bottom - that.bottom);
+					var top_dif = Math.abs(box.top - that.top);
+					var left_dif = Math.abs(box.left - that.left);
+					var right_dif = Math.abs(box.right - that.right);
+					var difs = [bottom_dif,top_dif,left_dif,right_dif];
+					var filtered = difs.filter(function(dif){return dif > (half_mile + .000001)});
+					var sum = difs.reduce(function(a,b){return a + b;})
+					if(filtered.length === 0 && sum>0){
+						that.adjacent_boxes.push(box);
+					}
+				})
+			}
+
+			this.draw = function(){
+				var bounds = [[this.bottom,this.left],[this.top,this.right]]
+				this.rectangle = L.rectangle(bounds, {color: "green", weight: 1});
+				this.rectangle.addTo(mymap);
+			}
+
+			this.is_present_in_box = function(lat_long){
+				var lat = lat_long[0];
+				var long = lat_long[1];
+
+				if(lat > this.bottom && lat < this.top){
+					if(long > this.left && long < this.right){
+						return true;
+					}
+				}
+				return false;
+			}
+
+			this.iterate_buildings_and_add_contained_buildings = function(){
+				var that = this;
+				buildings.forEach(function(building){
+					if(that.is_present_in_box(building.center_lat_long) && that.contained_buildings.includes(building) === false){
+						that.contained_buildings.push(building);
+					}
+				})
+			}
+
+			this.iterate_and_add_substations = function(){
+				var that = this;
+				substations.forEach(function(building){
+					if(that.is_present_in_box(building.center_lat_long)){
+						that.contained_substations.push(building);
+						building.grid_box = that;
+					}
+				})
+			}
+
+			this.update_num_unserved = function(){
+				var contained_subs = this.contained_substations.length;
+				var adjacent_subs = 0;
+				this.adjacent_boxes.forEach(function(box){
+					adjacent_subs = adjacent_subs + box.contained_substations.length;
+				})
+				var total_subs = contained_subs + adjacent_subs;
+
+				this.contained_and_adjacent_subs = total_subs;
+				this.unserved_buildings = this.contained_buildings.length - (this.contained_and_adjacent_subs * 125)
+
+				// var
+			}
+
+		}
+
+	}
+
+	class Grid{
+		constructor(grid_array){
+			this.grid_array = grid;
+
+			this.sort_by_unserved = function(){
+				this.grid_array.sort(function(a,b){if(a.unserved_buildings > b.unserved_buildings){return 1} return -1})
+			}
+
+			this.sort_by_contained_buildings = function(){
+				this.grid_array.sort(function(a,b){if(a.contained_buildings.length > b.contained_buildings.length){return 1} return -1})
+			}
+
+			this.guess_top_x = function(x){
+				for(var i = 0; i < x; i++){
+					this.sort_by_unserved();
+					this.grid_array[grid_array.length-1].add_guessed_substation();
+					this.sort_by_unserved();
+				}
+			}
+		}
+	}
+
+//Script for grid analysis 
+	function get_grid_boxes(bounds){
+		var bottom = bounds[1][0]
+		var left = bounds[0][1]
+		var top = bounds[0][0]
+		var right = bounds[1][1]
+		console.log(bottom + "," + left + "," + right + "," + top)
+		var half_mile =  .007246;
+
+		var lat_dif = top-bottom;
+		var long_dif = right - left;
+
+		var num_rows = Math.ceil(lat_dif / half_mile);
+		var num_columns = Math.ceil(long_dif / half_mile);
+		console.log(num_rows)
+		console.log(num_columns)
+
+		var box_bottom;
+		var box_left;
+		var box_top;
+		var box_right;
+		var grid = [];
+
+		for(var i = 0;i<num_rows;i++){
+			for(var j = 0;j<num_columns;j++){
+				box_left = left + (j * half_mile);
+				box_bottom = bottom + (i * half_mile)
+				box_right = box_left + half_mile;
+				box_top = box_bottom + half_mile;
+				grid.push(new Grid_Box(box_left,
+					box_bottom,box_right,box_top));
+			}	
+		}
+		return grid;
+		//output one grid object of grid squares of one half mile in perimeter side
+		//also draws grid boxes
+	}
+	var grid;
+
+	function do_grid_analysis(){
+		grid = get_grid_boxes(bounds);
+		grid.forEach(function(box){box.draw()});
+		grid.forEach(function(box){box.iterate_buildings_and_add_contained_buildings()});	
+	}
+
+	function go_and_do_analysis(){
+		go();
+		do_grid_analysis();
+		grid.forEach(function(box){
+			box.iterate_buildings_and_add_contained_buildings();
+			box.iterate_and_add_substations();
+			box.find_adjacent_boxes()
+			
+		})
+		grid.forEach(function(box){
+			box.update_num_unserved()
+		})
+		grid = new Grid(grid);
+		grid.sort_by_unserved();
+		substations.forEach(function(station){station.draw()})
+	}
+
+
+
+
+</script>
 
 
 </body>
